@@ -1,0 +1,5 @@
+# Bind address on which to listen.
+listen_addr = ":2050"
+
+# Address of the Graphite backend.
+graphite_addr = "http://localhost"
