@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -28,6 +27,7 @@ var (
 )
 
 func init() {
+	flag.Parse()
 	conf = &Conf{}
 	_, err := toml.DecodeFile(*confFile, conf)
 	if err != nil {
@@ -88,23 +88,27 @@ type SelfHealthChecker struct {
 	Frequency time.Duration
 }
 
+func (c *SelfHealthChecker) do() {
+	log.Println("Running graphite health check")
+	resp, err := client.Get(GraphiteURL("/")) // TODO: Is there a better health check route?
+	c.Lock()
+	defer c.Unlock()
+	if err != nil {
+		log.Println("Error contacting graphite:", err)
+		c.Code = http.StatusBadGateway
+		c.Message = fmt.Sprint("Error contacting graphite server:", err)
+		return
+	}
+	log.Println("Graphite OK")
+	c.SetFromResponse(resp)
+	resp.Body.Close()
+}
+
 func (c *SelfHealthChecker) Run() {
 	ticker := time.NewTicker(c.Frequency)
+	c.do()
 	for _ = range ticker.C {
-		log.Println("Running graphite health check")
-		resp, err := client.Get(GraphiteURL("/")) // TODO: Is there a better health check route?
-		c.Lock()
-		if err != nil {
-			log.Println("Error contacting graphite:", err)
-			c.Code = http.StatusBadGateway
-			c.Message = fmt.Sprint("Error contacting graphite server:", err)
-			c.Unlock()
-			continue
-		}
-		log.Println("Graphite OK")
-		c.SetFromResponse(resp)
-		resp.Body.Close()
-		c.Unlock()
+		c.do()
 	}
 }
 
@@ -120,12 +124,13 @@ func main() {
 			Code:    http.StatusNotFound,
 			Message: "Health check hasn't been run against Graphite yet",
 		},
-		Frequency: 10 * time.Second,
+		Frequency: 30 * time.Second,
 	}
 	go selfChecker.Run()
 
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", selfChecker)
+	mux.HandleFunc("/check", HandleGraphiteChecks)
 
 	server := &http.Server{
 		Addr:    conf.ListenAddr,
@@ -133,6 +138,4 @@ func main() {
 	}
 	log.Println("Now listening on", conf.ListenAddr)
 	log.Fatal(server.ListenAndServe())
-
-	_ = json.Compact
 }
