@@ -345,6 +345,21 @@ func (c *Check) MakeGraphiteURL() string {
 	return GraphiteURL("render?" + values.Encode())
 }
 
+// TODO: The user could configure the Render chart URL in the toml (adjust time range, size, etc.)
+func (c *Check) MakeGraphiteRenderURL() string {
+	minutes := 30
+	title := fmt.Sprintf("Last %d minutes of data for %s", minutes, c.Metric)
+	values := url.Values{
+		"target": {c.Metric},
+		"from":   {fmt.Sprintf("-%dmins", minutes)},
+		"width":  {"800"},
+		"height": {"600"},
+		"yMin":   {"0"},
+		"title":  {title},
+	}
+	return GraphiteURL("render?" + values.Encode())
+}
+
 // TODO: retries
 func (c *Check) DoCheck(w http.ResponseWriter) {
 	s := &Status{}
@@ -443,7 +458,11 @@ func CompareGraphiteResultWithCheck(result []*GraphiteResult, c *Check) (ok bool
 		return false, "group_limit not given, yet Graphite returned multiple datapoints"
 	}
 	checkResult := result[0].compareWithCheck(c)
-	return checkResult.OK, checkResult.Reason
+	reason = checkResult.Reason
+	if !checkResult.OK {
+		reason += "\nChart2: " + c.MakeGraphiteRenderURL()
+	}
+	return checkResult.OK, reason
 }
 
 func checkGroupResults(results []CheckResult, c *Check) (ok bool, reason string) {
@@ -475,6 +494,7 @@ func checkGroupResults(results []CheckResult, c *Check) (ok bool, reason string)
 					fmt.Fprintf(buf, "%s\n", r.Reason)
 				}
 			}
+			fmt.Fprintf(buf, "Chart: %s", c.MakeGraphiteRenderURL())
 			return false, buf.String()
 		}
 	}
