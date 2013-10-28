@@ -439,7 +439,6 @@ type CheckResult struct {
 }
 
 func CompareGraphiteResultWithCheck(result []*GraphiteResult, c *Check) (ok bool, reason string) {
-	fmt.Printf("\033[01;34m>>>> c: %#v\x1B[m\n", c)
 	if len(result) == 0 {
 		return false, "No datapoints returned from Graphite."
 	}
