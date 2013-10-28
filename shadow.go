@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -16,12 +17,11 @@ import (
 )
 
 var (
-	client = &http.Client{
-		Transport: &http.Transport{
-			MaxIdleConnsPerHost:   10,
-			ResponseHeaderTimeout: 10 * time.Second,
-		},
+	// Dial with 5 second timeout (including name resolution).
+	dial = func(network, addr string) (net.Conn, error) {
+		return net.DialTimeout(network, addr, 5*time.Second)
 	}
+	client   *http.Client
 	conf     *Conf
 	confFile = flag.String("conf", "conf.toml", "Which config file to use")
 )
@@ -37,6 +37,14 @@ func init() {
 		conf.GraphiteAddr = "http://" + conf.GraphiteAddr
 	}
 	conf.GraphiteAddr = strings.TrimSuffix(conf.GraphiteAddr, "/")
+
+	client = &http.Client{
+		Transport: &http.Transport{
+			Dial:                  dial,
+			MaxIdleConnsPerHost:   10,
+			ResponseHeaderTimeout: time.Duration(conf.GraphiteTimeoutSeconds) * time.Second,
+		},
+	}
 }
 
 func GraphiteURL(path string) string {
@@ -44,8 +52,9 @@ func GraphiteURL(path string) string {
 }
 
 type Conf struct {
-	ListenAddr   string `toml:"listen_addr"`
-	GraphiteAddr string `toml:"graphite_addr"`
+	ListenAddr             string `toml:"listen_addr"`
+	GraphiteAddr           string `toml:"graphite_addr"`
+	GraphiteTimeoutSeconds int    `toml:"graphite_timeout_seconds"`
 }
 
 // A Status is an HTTP status and a reason if it's not http.StatusOK.
