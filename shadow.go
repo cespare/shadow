@@ -140,6 +140,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/healthz", selfChecker)
 	mux.HandleFunc("/check", HandleGraphiteChecks)
+	mux.Handle("/", http.FileServer(http.Dir("static")))
 
 	server := &http.Server{
 		Addr:    conf.ListenAddr,
