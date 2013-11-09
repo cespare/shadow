@@ -1,20 +1,176 @@
-body {
-  background-color: #f0f0f0;
-  font: 24px "Helvetica" black;
+@import "bourbon/bourbon";
+
+// TODO: real reset
+* {
+  margin: 0;
+  padding: 0;
 }
+
+$light-blue: #aad4ef;
+$light-green: #c2f3c1;
+$light-purple: #b9bff3;
+$text-color: #444;
+
+.icon {
+  font-size: 16px;
+}
+
+body {
+  background-color: $light-purple;
+  font: 18px "Helvetica";
+  color: $text-color;
+}
+
+$default-border: 2px solid #88c;
+
+@mixin default-box {
+  border: $default-border;
+  border-radius: 4px;
+  padding: 5px;
+  box-sizing: border-box;
+}
+
+input[type=text], textarea, select {
+  @include default-box;
+  font: 18px "Helvetica";
+  color: $text-color;
+  background-color: #fcfcfc;
+  height: 40px;
+  &.flash {
+    background-color: yellow;
+    transition-duration: 0;
+  }
+  transition: background-color 250ms linear;
+  &.bad {
+    background-color: #f89c8c;
+    transition-duration: 0;
+  }
+  &.good {
+    background-color: #dcf3db;
+    transition-duration: 0;
+  }
+}
+
+textarea {
+  resize: vertical;
+}
+
+$width: 1000px;
 
 #main {
-  width: 600px;
-  margin: 50px auto;
+  width: 100%;
 }
 
-input[type=text] {
-  font: 24px "Helvetica" black;
-  padding: 5px;
-  border: 1px solid #bbb;
-  border-radius: 2px;
+section.tier {
+  text-align: center;
 }
 
 #url {
+  background-color: $light-blue;
+  padding: 50px 0;
+}
+
+#url-box {
+  width: $width;
+  height: 80px;
+}
+
+#breakdown {
+  background-color: $light-green;
+  display: flex;
+  justify-content: center;
+  section.column { box-sizing: border-box;
+    padding: 50px 0;
+    text-align: left;
+    &:first-child {
+      width: $width / 2 + 100px;
+      padding-right: 20px;
+    }
+    &:last-child {
+      width: $width / 2 - 100px;
+      padding-left: 20px;
+    }
+  }
+}
+#metric-box {
   width: 100%;
+  height: 200px;
+  box-sizing: border-box;
+  font-family: "Inconsolata", sans-serif;
+}
+
+#breakdown section.column:last-child {
+  & > * {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 20px;
+    &:last-child {
+      margin-bottom: 0;
+    }
+  }
+}
+
+#range {
+  input { width: 100px; }
+}
+
+#limits, #group-limits {
+  .limit, .new-limit {
+    border-left: $default-border;
+    margin-left: 10px;
+    padding: 5px 10px;
+    &:first-child { padding-top: 10px; }
+    &:last-child { padding-bottom: 10px; }
+  }
+  select.limit-name { width: 100px; }
+  select.comparison { width: 50px; }
+  input.value-box { width: 80px; }
+}
+
+#limit-template {
+  display: none;
+}
+
+#add-limit, span.remove-limit {
+  cursor: pointer;
+}
+
+#query {
+  margin: 50px auto 30px auto;
+  @include background-image(linear-gradient(#6f78d0, #4551c2));
+  font: 18px "Helvetica";
+  padding: 5px 15px;
+  border-width: 0;
+  border-radius: 5px;
+  color: #eee;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+  box-shadow: 0px 1px 2px rgba(0,0,0,0.5);
+  &:focus {
+    outline: 0;
+  }
+  cursor: pointer;
+  transition: background-image 250ms linear;
+  &:hover {
+    transition-duration: 250ms;
+    @include background-image(linear-gradient(#7d85d0, #4551c2));
+  }
+  &:active {
+    transition-duration: 250ms;
+    @include background-image(linear-gradient(#4551c2, #7d85d0));
+    box-shadow: none;
+  }
+}
+
+#query-wrapper {
+  height: 100px;
+  margin: 0 auto;
+  width: $width;
+}
+
+#query-result {
+  width: 100%;
+  display: none;
+  height: 100px;
+  text-align: left;
+  margin-bottom: 200px;
 }

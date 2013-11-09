@@ -4,10 +4,84 @@
     <title>shadow</title>
     <meta charset="utf-8">
     <link rel="stylesheet" type="text/css" href="style.css" />
+    <link rel="stylesheet" type="text/css" href="ionicons.min.css" />
+    <link href='http://fonts.googleapis.com/css?family=Inconsolata' rel='stylesheet' type='text/css'>
+    <script src="//ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+    <script src="/spin.min.js"></script>
+    <script src="/main.js"></script>
   </head>
   <body>
+    <div class="limit" id="limit-template">
+      <select class="limit-name">
+        <option value="avg">avg</option>
+        <option value="min">min</option>
+        <option value="max">max</option>
+        <option value="sum">sum</option>
+      </select>
+      <select class="comparison">
+        <option value="<">&lt;</option>
+        <option value="<=">&leq;</option>
+        <option value="=">=</option>
+        <option value=">=">&geq;</option>
+        <option value=">">&gt;</option>
+      </select>
+      <input class="value-box" type="text" placeholder="1234">
+      <span class="remove-limit icon ion-close-round"></span>
+    </div>
+
     <section id="main">
-      <input id="url" type="text" value="check url">
+      <section id="url" class="tier">
+        <textarea id="url-box" placeholder="check url" spellcheck="false"></textarea>
+        <div class="error"></div>
+      </section>
+      <section id="breakdown" class="tier">
+        <section class="column">
+          metric:
+          <textarea id="metric-box" spellcheck="false"></textarea>
+        </section>
+        <section class="column">
+          <span id="range">
+            time range:
+            <input id="range-box" type="text" placeholder="1h30m">
+          </span>
+
+          <div id="limits">
+            limits:
+            <div class="new-limit">
+              <span id="add-limit" class="icon ion-plus-round"></span>
+            </div>
+          </div>
+
+          <div id="group-limits">
+            group limit:
+            <div class="limit">
+              <select class="limit-name">
+                <option value="none">none</option>
+                <option value="count">count</option>
+                <option value="fraction">fraction</option>
+                <option value="any">any</option>
+                <option value="all">all</option>
+              </select>
+              <select class="comparison">
+                <option value="<">&lt;</option>
+                <option value="<=">&leq;</option>
+                <option value="=">=</option>
+                <option value=">=">&geq;</option>
+                <option value=">">&gt;</option>
+              </select>
+              <input class="value-box" type="text" placeholder="1234">
+            </div>
+          </div>
+
+          <label><input id="include-empty-targets-checkbox" type="checkbox"> include empty targets</label>
+        </section>
+      </section>
+      <section id="output" class="tier">
+        <button id="query">run query</button>
+        <div id="query-wrapper">
+          <textarea id="query-result" readonly="true"></textarea>
+        </div>
+      </section>
     </section>
   </body>
 </html>
