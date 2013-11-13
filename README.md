@@ -72,6 +72,7 @@ disk space:
 
 ## Advantages over Umpire
 
+* Handy web UI for constructing queries
 * Easier to deploy (Go vs. Ruby)
 * More thorough error messages
 * Supports group limits
