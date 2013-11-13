@@ -36,6 +36,15 @@ Shadow responds to queries at `/check`. The check properties are given in query-
 Shadow has a health check that lives at `/healthz`. This also checks that Graphite is up as part of its health
 check.
 
+## Web UI
+
+Shadow query strings can get somewhat hard to read, especially with all the url character escaping and when
+you have complex Graphite queries. So, Shadow includes a little web page that helps you construct the query
+strings. Just go to the root URL (for example, `http://localhost:2050`). (Note that for Shadow to find its
+HTML/CSS/JS assets, it must be run from the repository root.)
+
+![screenshot](/screenshot.png)
+
 ## Examples
 
 Suppose you log your web server's requests at `web-1.requests.{count,rate}`. You can make sure your mean qps
