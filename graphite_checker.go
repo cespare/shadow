@@ -366,7 +366,6 @@ func (c *Check) DoCheck(w http.ResponseWriter) {
 	defer func() {
 		s.WriteHTTPResponse(w)
 	}()
-	fmt.Println(c.MakeGraphiteURL())
 	resp, err := client.Get(c.MakeGraphiteURL())
 	if err != nil {
 		s.Code = http.StatusBadGateway
