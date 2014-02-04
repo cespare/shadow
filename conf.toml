@@ -2,7 +2,7 @@
 listen_addr = ":2050"
 
 # Address of the Graphite backend.
-graphite_addr = "http://graphite-ny-2.liftoff.io"
+graphite_addr = "http://localhost"
 
 # How long to wait for Graphite responses.
 graphite_timeout_seconds = 10
