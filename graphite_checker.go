@@ -254,6 +254,7 @@ func ParseGroupLimits(s string) ([]*GroupLimit, error) {
 type Check struct {
 	Metric              string // Graphite metric name
 	Range               time.Duration
+	Until               time.Duration
 	IncludeEmptyTargets bool
 	IndividualLimits    []*IndividualLimit
 	GroupLimits         []*GroupLimit
@@ -280,9 +281,17 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 	if err != nil {
 		return nil, err
 	}
-	duration, err := time.ParseDuration(rng)
+	until, err := getSingleParam(q, "until")
+	if err != nil {
+		return nil, err
+	}
+	rngDuration, err := time.ParseDuration(rng)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse range: %s", err)
+	}
+	untilDuration, err := time.ParseDuration(until)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse until: %s", err)
 	}
 	limitString, err := getSingleParam(q, "limit")
 	if err != nil {
@@ -306,7 +315,8 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 
 	c := &Check{
 		Metric:              metric,
-		Range:               duration,
+		Range:               rngDuration,
+		Until:               untilDuration,
 		IncludeEmptyTargets: q.Get("include_empty_targets") == "true",
 		IndividualLimits:    individualLimits,
 		GroupLimits:         groupLimits,
@@ -330,6 +340,7 @@ func (c *Check) String() string {
 	v := url.Values{
 		"metric":      {c.Metric},
 		"range":       {c.Range.String()},
+		"until":       {c.Until.String()},
 		"limit":       {strings.Join(individualLimits, ",")},
 		"group_limit": {strings.Join(groupLimits, ",")},
 	}
@@ -341,6 +352,7 @@ func (c *Check) MakeGraphiteURL() string {
 		"target": {c.Metric},
 		"format": {"json"},
 		"from":   {fmt.Sprintf("-%ds", int(c.Range.Seconds()))},
+		"until":  {fmt.Sprintf("-%ds", int(c.Until.Seconds()))},
 	}
 	return GraphiteURL("render?" + values.Encode())
 }

@@ -53,8 +53,8 @@ parseGroupLimit = (raw) ->
   throw "Bad comparison for group limit: #{name}" unless name in ["count", "fraction"]
   [name, comp, value]
 
-parseRange = (raw) ->
-  throw "Bad range: #{raw}" unless raw.match(/^(\d+[dhms])+$/)
+parseDuration = (raw) ->
+  throw "Bad duration: #{raw}" unless raw.match(/^(\d+[dhms])+$/)
   raw
 
 parseIncludeEmptyTargets = (raw) -> raw == "true"
@@ -70,7 +70,8 @@ parseComparison = (raw) ->
 
 fieldToParser =
   metric: [parseMetric, true]
-  range: [parseRange, true]
+  range: [parseDuration, true]
+  until: [parseDuration, true]
   limit: [parseLimit, true]
   group_limit: [parseGroupLimit, false]
   include_empty_targets: [parseIncludeEmptyTargets, false]
@@ -88,6 +89,7 @@ populateFieldsFromUrl = ->
 
   populateField($("#metric-box"), indentMetric(parsed.metric))
   populateField($("#range-box"), parsed.range)
+  populateField($("#until-box"), parsed.until)
   $("#limits .limit").remove()
   populateLimits(parsed.limit)
   populateGroupLimits(parsed.group_limit)
@@ -185,6 +187,7 @@ setGroupLimitFieldVisibility = ->
 writeUrlFromFields = ->
   metric = encodeURIComponent(dedentMetric($("#metric-box").val()))
   range = encodeURIComponent($("#range-box").val())
+  untilVal = encodeURIComponent($("#until-box").val())
   limits = []
   for l in $("#limits .limit")
     $l = $(l)
@@ -193,7 +196,7 @@ writeUrlFromFields = ->
     val = $l.find("input.value-box").val()
     limits.push(name+comp+val)
   limit = encodeURIComponent(limits.join(","))
-  query = "/check?metric=#{metric}&range=#{range}&limit=#{limit}"
+  query = "/check?metric=#{metric}&range=#{range}&until=#{untilVal}&limit=#{limit}"
   $groupLimit = $("#group-limits .limit")
   groupLimitType = $groupLimit.find("select.limit-name").val()
   if groupLimitType != "none"

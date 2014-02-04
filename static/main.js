@@ -1,5 +1,5 @@
 (function() {
-  var addLimit, dedentMetric, doQuery, fieldToParser, flash, parseComparison, parseGroupLimit, parseIncludeEmptyTargets, parseLimit, parseMetric, parseRange, parseUrl, populateField, populateFieldsFromUrl, populateGroupLimits, populateLimits, removeLimit, setGroupLimitFieldVisibility, spinjsSettings, writeUrlFromFields;
+  var addLimit, dedentMetric, doQuery, fieldToParser, flash, parseComparison, parseDuration, parseGroupLimit, parseIncludeEmptyTargets, parseLimit, parseMetric, parseUrl, populateField, populateFieldsFromUrl, populateGroupLimits, populateLimits, removeLimit, setGroupLimitFieldVisibility, spinjsSettings, writeUrlFromFields;
 
   spinjsSettings = {
     lines: 13,
@@ -87,9 +87,9 @@
     return [name, comp, value];
   };
 
-  parseRange = function(raw) {
+  parseDuration = function(raw) {
     if (!raw.match(/^(\d+[dhms])+$/)) {
-      throw "Bad range: " + raw;
+      throw "Bad duration: " + raw;
     }
     return raw;
   };
@@ -114,7 +114,8 @@
 
   fieldToParser = {
     metric: [parseMetric, true],
-    range: [parseRange, true],
+    range: [parseDuration, true],
+    until: [parseDuration, true],
     limit: [parseLimit, true],
     group_limit: [parseGroupLimit, false],
     include_empty_targets: [parseIncludeEmptyTargets, false]
@@ -137,6 +138,7 @@
     }
     populateField($("#metric-box"), indentMetric(parsed.metric));
     populateField($("#range-box"), parsed.range);
+    populateField($("#until-box"), parsed.until);
     $("#limits .limit").remove();
     populateLimits(parsed.limit);
     populateGroupLimits(parsed.group_limit);
@@ -263,9 +265,10 @@
   };
 
   writeUrlFromFields = function() {
-    var $groupLimit, $l, $url, comp, groupLimitType, l, limit, limits, metric, name, query, range, val, _i, _len, _ref;
+    var $groupLimit, $l, $url, comp, groupLimitType, l, limit, limits, metric, name, query, range, untilVal, val, _i, _len, _ref;
     metric = encodeURIComponent(dedentMetric($("#metric-box").val()));
     range = encodeURIComponent($("#range-box").val());
+    untilVal = encodeURIComponent($("#until-box").val());
     limits = [];
     _ref = $("#limits .limit");
     for (_i = 0, _len = _ref.length; _i < _len; _i++) {
@@ -277,7 +280,7 @@
       limits.push(name + comp + val);
     }
     limit = encodeURIComponent(limits.join(","));
-    query = "/check?metric=" + metric + "&range=" + range + "&limit=" + limit;
+    query = "/check?metric=" + metric + "&range=" + range + "&until=" + untilVal + "&limit=" + limit;
     $groupLimit = $("#group-limits .limit");
     groupLimitType = $groupLimit.find("select.limit-name").val();
     if (groupLimitType !== "none") {
