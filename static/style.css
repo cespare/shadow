@@ -76,7 +76,7 @@ section.tier {
   #breakdown section.column:last-child > *:last-child {
     margin-bottom: 0; }
 
-#range input, #until input {
+#from input, #until input {
   width: 100px; }
 
 #limits .limit, #limits .new-limit, #group-limits .limit, #group-limits .new-limit {

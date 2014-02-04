@@ -114,7 +114,7 @@
 
   fieldToParser = {
     metric: [parseMetric, true],
-    range: [parseDuration, true],
+    from: [parseDuration, true],
     until: [parseDuration, true],
     limit: [parseLimit, true],
     group_limit: [parseGroupLimit, false],
@@ -137,7 +137,7 @@
       return;
     }
     populateField($("#metric-box"), indentMetric(parsed.metric));
-    populateField($("#range-box"), parsed.range);
+    populateField($("#from-box"), parsed.from);
     populateField($("#until-box"), parsed.until);
     $("#limits .limit").remove();
     populateLimits(parsed.limit);
@@ -265,9 +265,9 @@
   };
 
   writeUrlFromFields = function() {
-    var $groupLimit, $l, $url, comp, groupLimitType, l, limit, limits, metric, name, query, range, untilVal, val, _i, _len, _ref;
+    var $groupLimit, $l, $url, comp, from, groupLimitType, l, limit, limits, metric, name, query, untilVal, val, _i, _len, _ref;
     metric = encodeURIComponent(dedentMetric($("#metric-box").val()));
-    range = encodeURIComponent($("#range-box").val());
+    from = encodeURIComponent($("#from-box").val());
     untilVal = encodeURIComponent($("#until-box").val());
     limits = [];
     _ref = $("#limits .limit");
@@ -280,7 +280,7 @@
       limits.push(name + comp + val);
     }
     limit = encodeURIComponent(limits.join(","));
-    query = "/check?metric=" + metric + "&range=" + range + "&until=" + untilVal + "&limit=" + limit;
+    query = "/check?metric=" + metric + "&from=" + from + "&until=" + untilVal + "&limit=" + limit;
     $groupLimit = $("#group-limits .limit");
     groupLimitType = $groupLimit.find("select.limit-name").val();
     if (groupLimitType !== "none") {

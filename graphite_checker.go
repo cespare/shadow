@@ -13,11 +13,6 @@ import (
 	"time"
 )
 
-/*
-check?metric=web.requests.rate&range=5m&limit=avg>300,avg<=1e3&group_limit=count>3
-check?metric=web.requests.rate&range=5m&limits=avg>300,avg<=1e3&group_limit=any
-*/
-
 func init() {
 	for k, v := range ParamToAggMethod {
 		aggMethodToParam[v] = k
@@ -253,7 +248,7 @@ func ParseGroupLimits(s string) ([]*GroupLimit, error) {
 
 type Check struct {
 	Metric              string // Graphite metric name
-	Range               time.Duration
+	From                time.Duration
 	Until               time.Duration
 	IncludeEmptyTargets bool
 	IndividualLimits    []*IndividualLimit
@@ -277,7 +272,7 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 	if err != nil {
 		return nil, err
 	}
-	rng, err := getSingleParam(q, "range")
+	from, err := getSingleParam(q, "from")
 	if err != nil {
 		return nil, err
 	}
@@ -285,9 +280,9 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 	if err != nil {
 		return nil, err
 	}
-	rngDuration, err := time.ParseDuration(rng)
+	fromDuration, err := time.ParseDuration(from)
 	if err != nil {
-		return nil, fmt.Errorf("could not parse range: %s", err)
+		return nil, fmt.Errorf("could not parse from: %s", err)
 	}
 	untilDuration, err := time.ParseDuration(until)
 	if err != nil {
@@ -315,7 +310,7 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 
 	c := &Check{
 		Metric:              metric,
-		Range:               rngDuration,
+		From:                fromDuration,
 		Until:               untilDuration,
 		IncludeEmptyTargets: q.Get("include_empty_targets") == "true",
 		IndividualLimits:    individualLimits,
@@ -339,7 +334,7 @@ func (c *Check) String() string {
 	sort.Strings(groupLimits)
 	v := url.Values{
 		"metric":      {c.Metric},
-		"range":       {c.Range.String()},
+		"from":        {c.From.String()},
 		"until":       {c.Until.String()},
 		"limit":       {strings.Join(individualLimits, ",")},
 		"group_limit": {strings.Join(groupLimits, ",")},
@@ -351,7 +346,7 @@ func (c *Check) MakeGraphiteURL() string {
 	values := url.Values{
 		"target": {c.Metric},
 		"format": {"json"},
-		"from":   {fmt.Sprintf("-%ds", int(c.Range.Seconds()))},
+		"from":   {fmt.Sprintf("-%ds", int(c.From.Seconds()))},
 		"until":  {fmt.Sprintf("-%ds", int(c.Until.Seconds()))},
 	}
 	return GraphiteURL("render?" + values.Encode())
