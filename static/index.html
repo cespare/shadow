@@ -86,6 +86,42 @@
           <textarea id="query-result" readonly="true"></textarea>
         </div>
       </section>
+      <section id="help" class="tier">
+        <div id="help-wrapper">
+          <h3>How do I use this?</h3>
+          <ul>
+            <li>
+              The metric is a graphite metric. It can be a query that returns multiple keys
+              (e.g., by using <code>*</code>, <code>[...]</code>, or <code>{...}</code>.
+              See the <a href="http://graphite.readthedocs.org/en/latest/functions.html">Graphite function documentation</a>
+              for more details.
+            </li>
+            <li>
+              The range determines how far back in the past to consider. The syntax is Go's `time.Duration`
+              (see the <a href="http://golang.org/pkg/time/#ParseDuration"><code>time.ParseDuration</code></a>
+              documentation for the details). Examples: <code>30s</code>, <code>5m</code>, <code>1h</code>.
+            </li>
+            <li>
+              Limits configure what comparisons determine whether the check passes or fails.
+              If your metric only returns a single key, then the check passes if and only if
+              all the limits are satisfied. If your metric returns multiple keys, then you need group limits.
+            </li>
+            <li>
+              Group limits must be given when the target metric returns multiple keys.
+              A group limit defines the limits on the number/fraction of successful targets needed for a
+              successful check. For example, if the group limit is <code>count &gt; 5</code>,
+              then more than 5 of the resulting target must satisfy all limits over the given time range in
+              order for the overall check to pass. Two aliases, <code>any</code> and <code>all</code>, an be
+              used for convenience.
+            </li>
+            <li>
+              The "include empty targets" setting controls whether Shadow considers targets that come back
+              without any non-null datapoints. Generally you want to ignore these because if you have
+              per-host graphite metrics, old hosts that are no longer around will return null data.
+            </li>
+          </ul>
+        </div>
+      </section>
     </section>
   </body>
 </html>

@@ -16,9 +16,10 @@ $text-color: #444;
 }
 
 body {
-  background-color: $light-purple;
+  background-color: $light-green;
   font: 18px "Helvetica";
   color: $text-color;
+  line-height: 1.2em;
 }
 
 $default-border: 2px solid #88c;
@@ -67,7 +68,7 @@ section.tier {
 
 #url {
   background-color: $light-blue;
-  padding: 50px 0;
+padding: 50px 0;
 }
 
 #url-box {
@@ -76,7 +77,6 @@ section.tier {
 }
 
 #breakdown {
-  background-color: $light-green;
   display: flex;
   justify-content: center;
   section.column { box-sizing: border-box;
@@ -136,6 +136,10 @@ section.tier {
   cursor: pointer;
 }
 
+#output {
+  background-color: $light-blue;
+}
+
 #query {
   margin: 50px auto 30px auto;
   @include background-image(linear-gradient(#6f78d0, #4551c2));
@@ -163,7 +167,7 @@ section.tier {
 }
 
 #query-wrapper {
-  height: 100px;
+  min-height: 100px;
   margin: 0 auto;
   width: $width;
 }
@@ -171,7 +175,27 @@ section.tier {
 #query-result {
   width: 100%;
   display: none;
-  height: 100px;
+  min-height: 200px;
   text-align: left;
-  margin-bottom: 200px;
+  margin-bottom: 50px;
+}
+
+#help-wrapper {
+  width: $width;
+  margin: 50px auto;
+  text-align: left;
+
+  h3 {
+    font-size: 24px;
+    margin-bottom: 10px;
+  }
+
+  code {
+    font-family: Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    background-color: rgba(255, 255, 255, 0.5);
+  }
+
+  li {
+    margin-bottom: 5px;
+  }
 }

@@ -1,2 +1,2 @@
 -g 'static/*.scss' -- bash -c 'sass --scss {} `dirname {}`/`basename {} .scss`.css'
--g 'static/*.coffee' -- coffee -c {}
+#-g 'static/*.coffee' -- coffee -c {}

@@ -2,3 +2,4 @@
 /test.toml
 /.sass-cache
 /shadow.tgz
+*.map
