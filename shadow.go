@@ -23,28 +23,9 @@ var (
 	client   *http.Client
 	conf     *Conf
 	confFile = flag.String("conf", "conf.toml", "Which config file to use")
+
+	version = "no version set" // overridable at build time with -ldflags -X
 )
-
-func init() {
-	flag.Parse()
-	conf = &Conf{}
-	_, err := toml.DecodeFile(*confFile, conf)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if !(strings.HasPrefix(conf.GraphiteAddr, "http://") || strings.HasPrefix(conf.GraphiteAddr, "https://")) {
-		conf.GraphiteAddr = "http://" + conf.GraphiteAddr
-	}
-	conf.GraphiteAddr = strings.TrimSuffix(conf.GraphiteAddr, "/")
-
-	client = &http.Client{
-		Transport: &http.Transport{
-			Dial:                  dial,
-			MaxIdleConnsPerHost:   10,
-			ResponseHeaderTimeout: time.Duration(conf.GraphiteTimeoutSeconds) * time.Second,
-		},
-	}
-}
 
 func GraphiteURL(path string) string {
 	return fmt.Sprintf("%s/%s", conf.GraphiteAddr, strings.TrimPrefix(path, "/"))
@@ -127,6 +108,32 @@ func (c *SelfHealthChecker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	versionFlag := flag.Bool("version", false, "Display the version and exit")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version)
+		return
+	}
+
+	conf = &Conf{}
+	_, err := toml.DecodeFile(*confFile, conf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	if !(strings.HasPrefix(conf.GraphiteAddr, "http://") || strings.HasPrefix(conf.GraphiteAddr, "https://")) {
+		conf.GraphiteAddr = "http://" + conf.GraphiteAddr
+	}
+	conf.GraphiteAddr = strings.TrimSuffix(conf.GraphiteAddr, "/")
+
+	client = &http.Client{
+		Transport: &http.Transport{
+			Dial:                  dial,
+			MaxIdleConnsPerHost:   10,
+			ResponseHeaderTimeout: time.Duration(conf.GraphiteTimeoutSeconds) * time.Second,
+		},
+	}
+
 	selfChecker := &SelfHealthChecker{
 		Status: &Status{
 			Code:    http.StatusNotFound,
