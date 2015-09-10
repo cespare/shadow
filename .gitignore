@@ -3,3 +3,4 @@
 /.sass-cache
 /shadow.tgz
 *.map
+/build
