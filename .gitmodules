@@ -1,6 +1,0 @@
-[submodule "vendor/src/github.com/cespare/go-apachelog"]
-	path = vendor/src/github.com/cespare/go-apachelog
-	url = https://github.com/cespare/go-apachelog
-[submodule "vendor/src/github.com/BurntSushi/toml"]
-	path = vendor/src/github.com/BurntSushi/toml
-	url = https://github.com/BurntSushi/toml

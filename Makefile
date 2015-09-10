@@ -1,15 +1,6 @@
-export GOPATH=$(PWD):$(PWD)/vendor
+.PHONY: build
 
-build: deps
+build:
 	sass --scss static/style.scss static/style.css
 	coffee -c static/main.coffee
 	go build -o shadow
-
-deps:
-	git submodule update --init
-
-tarball: build
-	tar czvf shadow.tgz shadow static
-
-clean:
-	rm -fr shadow

@@ -7,13 +7,12 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
-	apachelog "github.com/cespare/go-apachelog"
+	"github.com/cespare/shadow/internal/github.com/BurntSushi/toml"
+	"github.com/cespare/shadow/internal/github.com/cespare/hutil/apachelog"
 )
 
 var (
@@ -144,7 +143,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    conf.ListenAddr,
-		Handler: apachelog.NewHandler(mux, os.Stderr),
+		Handler: apachelog.NewDefaultHandler(mux),
 	}
 	log.Println("Now listening on", conf.ListenAddr)
 	log.Fatal(server.ListenAndServe())
