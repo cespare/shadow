@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cespare/shadow/internal/github.com/BurntSushi/toml"
-	"github.com/cespare/shadow/internal/github.com/cespare/hutil/apachelog"
+	"github.com/BurntSushi/toml"
+	"github.com/cespare/hutil/apachelog"
 )
 
 var (
