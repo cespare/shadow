@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -382,7 +383,7 @@ func (c *Check) DoCheck(w http.ResponseWriter) {
 	}
 	defer resp.Body.Close()
 	s.Code = resp.StatusCode
-	if resp.Header.Get("Content-Type") != "application/json" {
+	if getContentType(resp.Header) != "application/json" {
 		s.Message = "Non-JSON response from Graphite (exception?)"
 		if body, err := ioutil.ReadAll(resp.Body); err == nil {
 			s.Message += "\n\n" + string(body)
@@ -390,7 +391,7 @@ func (c *Check) DoCheck(w http.ResponseWriter) {
 		return
 	}
 	decoder := json.NewDecoder(resp.Body)
-	result := []*GraphiteResult{}
+	var result []*GraphiteResult
 	if err := decoder.Decode(&result); err != nil {
 		s.Code = http.StatusBadGateway
 		s.Message = "Could not read JSON response from Graphite: " + err.Error()
@@ -404,6 +405,18 @@ func (c *Check) DoCheck(w http.ResponseWriter) {
 	}
 	s.Code = http.StatusInternalServerError
 	s.Message = reason
+}
+
+func getContentType(header http.Header) string {
+	ct := header.Get("Content-Type")
+	if ct == "" {
+		return ""
+	}
+	mt, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return ""
+	}
+	return mt
 }
 
 func HandleGraphiteChecks(w http.ResponseWriter, r *http.Request) {

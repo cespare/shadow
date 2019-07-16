@@ -16,10 +16,6 @@ import (
 )
 
 var (
-	// Dial with 5 second timeout (including name resolution).
-	dial = func(network, addr string) (net.Conn, error) {
-		return net.DialTimeout(network, addr, 5*time.Second)
-	}
 	client   *http.Client
 	conf     *Conf
 	confFile = flag.String("conf", "conf.toml", "Which config file to use")
@@ -69,8 +65,8 @@ func (s *Status) String() string {
 	return fmt.Sprintf("NOT OK (%d): %s", s.Code, s.Message)
 }
 
-// SelfHealthChecker is our own health. We're assumed to be OK if we're running and if the Graphite we depend
-// on is running.
+// SelfHealthChecker is our own health. We're assumed to be OK if we're running
+// and if the Graphite we depend on is running.
 type SelfHealthChecker struct {
 	sync.Mutex
 	*Status
@@ -128,7 +124,8 @@ func main() {
 
 	client = &http.Client{
 		Transport: &http.Transport{
-			Dial:                  dial,
+			// Dial with 5 second timeout (including name resolution).
+			DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
 			MaxIdleConnsPerHost:   10,
 			ResponseHeaderTimeout: time.Duration(conf.GraphiteTimeoutSeconds) * time.Second,
 		},
