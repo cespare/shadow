@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -385,7 +384,7 @@ func (c *Check) DoCheck(w http.ResponseWriter) {
 	s.Code = resp.StatusCode
 	if resp.Header.Get("Content-Type") != "application/json" {
 		s.Message = "Non-JSON response from Graphite (exception?)"
-		if body, err := ioutil.ReadAll(resp.Body); err != nil {
+		if body, err := ioutil.ReadAll(resp.Body); err == nil {
 			s.Message += "\n\n" + string(body)
 		}
 		return
