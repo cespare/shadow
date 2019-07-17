@@ -3,152 +3,86 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/cespare/hutil/apachelog"
 )
 
-var (
-	client   *http.Client
-	conf     *Conf
-	confFile = flag.String("conf", "conf.toml", "Which config file to use")
-
-	version = "no version set" // overridable at build time with -ldflags -X
-)
-
-func GraphiteURL(path string) string {
-	return fmt.Sprintf("%s/%s", conf.GraphiteAddr, strings.TrimPrefix(path, "/"))
+type shadow struct {
+	graphiteURL string
+	client      *http.Client
 }
 
-type Conf struct {
-	ListenAddr             string `toml:"listen_addr"`
-	GraphiteAddr           string `toml:"graphite_addr"`
-	GraphiteTimeoutSeconds int    `toml:"graphite_timeout_seconds"`
+// A status is an HTTP status code plus a reason if the code is not 200.
+type status struct {
+	code    int
+	message string
 }
 
-// A Status is an HTTP status and a reason if it's not http.StatusOK.
-type Status struct {
-	Code    int
-	Message string
-}
-
-func (s *Status) SetFromResponse(resp *http.Response) {
-	s.Code = resp.StatusCode
-	if s.Code == http.StatusOK {
-		s.Message = ""
+func (s *status) setFromResponse(resp *http.Response) {
+	s.code = resp.StatusCode
+	if s.code == 200 {
+		s.message = ""
 		return
 	}
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		s.Message = fmt.Sprintf("Could not read server response: %s", err)
+		s.message = fmt.Sprintf("Could not read server response: %s", err)
 		return
 	}
-	s.Message = string(b)
+	s.message = string(b)
 }
 
-func (s *Status) WriteHTTPResponse(w http.ResponseWriter) {
-	w.WriteHeader(s.Code)
-	w.Write([]byte(s.String()))
-}
-
-func (s *Status) String() string {
-	if s.Code == http.StatusOK {
-		return "OK"
-	}
-	return fmt.Sprintf("NOT OK (%d): %s", s.Code, s.Message)
-}
-
-// SelfHealthChecker is our own health. We're assumed to be OK if we're running
-// and if the Graphite we depend on is running.
-type SelfHealthChecker struct {
-	sync.Mutex
-	*Status
-	Frequency time.Duration
-}
-
-func (c *SelfHealthChecker) do() {
-	log.Println("Running graphite health check")
-	resp, err := client.Get(GraphiteURL("/")) // TODO: Is there a better health check route?
-	c.Lock()
-	defer c.Unlock()
-	if err != nil {
-		log.Println("Error contacting graphite:", err)
-		c.Code = http.StatusBadGateway
-		c.Message = fmt.Sprint("Error contacting graphite server:", err)
+func (s *status) write(w http.ResponseWriter) {
+	w.WriteHeader(s.code)
+	if s.code == 200 {
+		io.WriteString(w, "OK\n")
 		return
 	}
-	log.Println("Graphite OK")
-	c.SetFromResponse(resp)
-	resp.Body.Close()
-}
-
-func (c *SelfHealthChecker) Run() {
-	ticker := time.NewTicker(c.Frequency)
-	c.do()
-	for _ = range ticker.C {
-		c.do()
-	}
-}
-
-func (c *SelfHealthChecker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	c.Lock()
-	c.WriteHTTPResponse(w)
-	c.Unlock()
+	fmt.Fprintf(w, "NOT OK (%d): %s\n", s.code, s.message)
 }
 
 func main() {
-	versionFlag := flag.Bool("version", false, "Display the version and exit")
+	log.SetFlags(0)
+	addr := flag.String("addr", ":8080", "Listen addr")
+	graphiteURL := flag.String("graphite", "", "Graphite root URL")
+	graphiteTimeout := flag.Duration("timeout", 30*time.Second, "Graphite request timeout")
 	flag.Parse()
 
-	if *versionFlag {
-		fmt.Println(version)
-		return
+	if *graphiteURL == "" {
+		log.Fatal("-graphite must be given")
 	}
+	if !strings.Contains(*graphiteURL, "://") {
+		*graphiteURL = "http://" + *graphiteURL
+	}
+	*graphiteURL = strings.TrimSuffix(*graphiteURL, "/")
 
-	conf = &Conf{}
-	_, err := toml.DecodeFile(*confFile, conf)
-	if err != nil {
-		log.Fatal(err)
-	}
-	if !(strings.HasPrefix(conf.GraphiteAddr, "http://") || strings.HasPrefix(conf.GraphiteAddr, "https://")) {
-		conf.GraphiteAddr = "http://" + conf.GraphiteAddr
-	}
-	conf.GraphiteAddr = strings.TrimSuffix(conf.GraphiteAddr, "/")
-
-	client = &http.Client{
-		Transport: &http.Transport{
-			// Dial with 5 second timeout (including name resolution).
-			DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-			MaxIdleConnsPerHost:   10,
-			ResponseHeaderTimeout: time.Duration(conf.GraphiteTimeoutSeconds) * time.Second,
+	s := &shadow{
+		client: &http.Client{
+			Transport: &http.Transport{
+				// Dial with 5 second timeout (including name resolution).
+				DialContext:         (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
+				MaxIdleConnsPerHost: 10,
+			},
+			Timeout: *graphiteTimeout,
 		},
+		graphiteURL: *graphiteURL,
 	}
-
-	selfChecker := &SelfHealthChecker{
-		Status: &Status{
-			Code:    http.StatusNotFound,
-			Message: "Health check hasn't been run against Graphite yet",
-		},
-		Frequency: 30 * time.Second,
-	}
-	go selfChecker.Run()
 
 	mux := http.NewServeMux()
-	mux.Handle("/healthz", selfChecker)
-	mux.HandleFunc("/check", HandleGraphiteChecks)
+	mux.HandleFunc("/check", s.handleGraphiteCheck)
 	mux.Handle("/", http.FileServer(http.Dir("static")))
 
 	server := &http.Server{
-		Addr:    conf.ListenAddr,
+		Addr:    *addr,
 		Handler: apachelog.NewDefaultHandler(mux),
 	}
-	log.Println("Now listening on", conf.ListenAddr)
+	log.Println("Now listening on", *addr)
 	log.Fatal(server.ListenAndServe())
 }

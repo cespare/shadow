@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"mime"
@@ -15,249 +15,178 @@ import (
 	"time"
 )
 
-func init() {
-	for k, v := range ParamToAggMethod {
-		aggMethodToParam[v] = k
+func reverseComparison(cmp string) string {
+	switch cmp {
+	case "<":
+		return ">"
+	case "<=":
+		return ">="
+	case "=":
+		return "="
+	case ">=":
+		return "<="
+	case ">":
+		return "<"
+	default:
+		panic(fmt.Sprintf("bad comparison %q", cmp))
 	}
-	for k, v := range ParamToComparison {
-		comparisonToParam[v] = k
-	}
-	comparisonToParam[CompEq] = "="
-	for k, v := range ParamToGroupAggMethod {
-		groupAggMethodToParam[v] = k
-	}
-}
-
-type AggMethod int
-
-const (
-	AggAvg AggMethod = iota
-	AggMin
-	AggMax
-	AggSum
-)
-
-var ParamToAggMethod = map[string]AggMethod{
-	"avg": AggAvg,
-	"min": AggMin,
-	"max": AggMax,
-	"sum": AggSum,
-}
-
-var aggMethodToParam = make(map[AggMethod]string)
-
-func (a AggMethod) String() string {
-	return aggMethodToParam[a]
-}
-
-type Comparison int
-
-const (
-	CompEq Comparison = iota
-	CompLt
-	CompLeq
-	CompGt
-	CompGeq
-)
-
-var ParamToComparison = map[string]Comparison{
-	"=":  CompEq,
-	"==": CompEq,
-	"<":  CompLt,
-	"<=": CompLeq,
-	">":  CompGt,
-	">=": CompGeq,
-}
-
-var comparisonToParam = make(map[Comparison]string)
-
-func (c Comparison) String() string {
-	return comparisonToParam[c]
-}
-
-var ComparisonInverse = map[Comparison]Comparison{
-	CompEq:  CompEq,
-	CompLt:  CompGt,
-	CompLeq: CompGeq,
-	CompGt:  CompLt,
-	CompGeq: CompLeq,
 }
 
 var limitRegex = regexp.MustCompile(`^([^<=>]+)([<=>]+)(.+)$`)
 
-type Limit struct {
-	Comparison
-	Bound float64
+type limit struct {
+	cmp   string
+	bound float64
 }
 
-func (l Limit) Within(n float64) bool {
-	var withinLimit bool
-	switch l.Comparison {
-	case CompLt:
-		withinLimit = n < l.Bound
-	case CompLeq:
-		withinLimit = n <= l.Bound
-	case CompEq:
-		withinLimit = n == l.Bound
-	case CompGeq:
-		withinLimit = n >= l.Bound
-	case CompGt:
-		withinLimit = n > l.Bound
+func (l limit) within(n float64) bool {
+	switch l.cmp {
+	case "<":
+		return n < l.bound
+	case "<=":
+		return n <= l.bound
+	case "=":
+		return n == l.bound
+	case ">=":
+		return n >= l.bound
+	case ">":
+		return n > l.bound
+	default:
+		panic(fmt.Sprintf("bad comparison %q", l.cmp))
 	}
-	return withinLimit
 }
 
-func (l Limit) String() string {
-	return fmt.Sprintf("%s%f", l.Comparison, l.Bound)
+func (l limit) String() string {
+	return fmt.Sprintf("%s%f", l.cmp, l.bound)
 }
 
-// e.g.: parts = ["avg", "<", "3.5"] or ["4e9", ">=", "max"]
-func ParseLimit(parts []string) (limit Limit, aggMethod string, err error) {
-	comp, ok := ParamToComparison[parts[1]]
-	if !ok {
-		return limit, "", fmt.Errorf("unknown comparison: %s", parts[1])
+// parseLimits parses tuples like ["avg", "<", "3.5"] or ["4e9", ">=", "max"].
+func parseLimit(parts []string) (lim limit, aggMethod string, err error) {
+	lim.cmp = parts[1]
+	switch lim.cmp {
+	case "<", "<=", "=", ">=", ">":
+	default:
+		return limit{}, "", fmt.Errorf("unknown comparison: %s", parts[1])
 	}
 	aggMethodParam, boundParam := parts[0], parts[2]
-	bound, err := strconv.ParseFloat(boundParam, 64)
-	// Switch if necessary
+	lim.bound, err = strconv.ParseFloat(boundParam, 64)
+	// Switch if necessary.
 	if err != nil {
 		aggMethodParam, boundParam = boundParam, aggMethodParam
-		comp = ComparisonInverse[comp]
-		bound, err = strconv.ParseFloat(boundParam, 64)
+		lim.cmp = reverseComparison(lim.cmp)
+		lim.bound, err = strconv.ParseFloat(boundParam, 64)
 		if err != nil {
-			return limit, "", fmt.Errorf("cannot parse bound %s: %s", boundParam, err)
+			return limit{}, "", fmt.Errorf("cannot parse bound %s: %s", boundParam, err)
 		}
 	}
-	limit.Comparison = comp
-	limit.Bound = bound
-	return limit, aggMethodParam, nil
+	return lim, aggMethodParam, nil
 }
 
-type GroupAggMethod int
-
-const (
-	GroupAggCount GroupAggMethod = iota
-	GroupAggFraction
-)
-
-var ParamToGroupAggMethod = map[string]GroupAggMethod{
-	"count":    GroupAggCount,
-	"fraction": GroupAggFraction,
+type individualLimit struct {
+	lim       limit
+	aggMethod string // avg, min, max, or sum
 }
 
-var groupAggMethodToParam = make(map[GroupAggMethod]string)
-
-func (a GroupAggMethod) String() string {
-	return groupAggMethodToParam[a]
+func (l *individualLimit) String() string {
+	return fmt.Sprintf("%s%s", l.aggMethod, l.lim)
 }
 
-type IndividualLimit struct {
-	Limit
-	AggMethod
-}
-
-func (l *IndividualLimit) String() string {
-	return fmt.Sprintf("%s%s", l.AggMethod, l.Limit)
-}
-
-func ParseIndividualLimits(s string) ([]*IndividualLimit, error) {
-	limits := []*IndividualLimit{}
-	for _, limit := range strings.Split(s, ",") {
-		limit = strings.TrimSpace(limit)
-		if limit == "" {
+func parseIndividualLimits(s string) ([]*individualLimit, error) {
+	var lims []*individualLimit
+	for _, s0 := range strings.Split(s, ",") {
+		s0 = strings.TrimSpace(s0)
+		if s0 == "" {
 			continue
 		}
-		parts := limitRegex.FindAllStringSubmatch(limit, -1)
+		parts := limitRegex.FindAllStringSubmatch(s0, -1)
 		if len(parts) != 1 || len(parts[0]) != 4 {
-			return nil, fmt.Errorf("invalid limit: '%s'", limit)
+			return nil, fmt.Errorf("invalid limit: %q", s0)
 		}
-		limit, aggMethodParam, err := ParseLimit(parts[0][1:])
+		var err error
+		var lim individualLimit
+		lim.lim, lim.aggMethod, err = parseLimit(parts[0][1:])
 		if err != nil {
 			return nil, err
 		}
-		aggMethod, ok := ParamToAggMethod[aggMethodParam]
-		if !ok {
-			return nil, fmt.Errorf("unknown aggregation method: '%s'", aggMethodParam)
+		switch lim.aggMethod {
+		case "avg", "min", "max", "sum":
+		default:
+			return nil, fmt.Errorf("unknown aggregation method: %q", lim.aggMethod)
 		}
-		limits = append(limits, &IndividualLimit{
-			Limit:     limit,
-			AggMethod: aggMethod,
-		})
+		lims = append(lims, &lim)
 	}
-	if len(limits) == 0 {
-		return nil, fmt.Errorf("no limits provided")
+	if len(lims) == 0 {
+		return nil, errors.New("no limits provided")
 	}
-	return limits, nil
+	return lims, nil
 }
 
-type GroupLimit struct {
-	Limit
-	GroupAggMethod
+type groupLimit struct {
+	lim       limit
+	aggMethod string // count or fraction
 }
 
-var GroupLimitAny = &GroupLimit{
-	Limit{CompGt, 0.0},
-	GroupAggCount,
+var groupLimitAny = &groupLimit{
+	lim:       limit{">", 0},
+	aggMethod: "count",
 }
 
-var GroupLimitAll = &GroupLimit{
-	Limit{CompEq, 1.0},
-	GroupAggFraction,
+var groupLimitAll = &groupLimit{
+	lim:       limit{"=", 1},
+	aggMethod: "fraction",
 }
 
-var GroupLimitShorthands = map[string]*GroupLimit{
-	"any": GroupLimitAny,
-	"all": GroupLimitAll,
+func (l *groupLimit) String() string {
+	return fmt.Sprintf("%s%s", l.aggMethod, l.lim)
 }
 
-func (l *GroupLimit) String() string {
-	return fmt.Sprintf("%s%s", l.GroupAggMethod, l.Limit)
-}
-
-func ParseGroupLimits(s string) ([]*GroupLimit, error) {
-	if limit, ok := GroupLimitShorthands[s]; ok {
-		return []*GroupLimit{limit}, nil
+func parseGroupLimits(s string) ([]*groupLimit, error) {
+	switch s {
+	case "any":
+		return []*groupLimit{groupLimitAny}, nil
+	case "all":
+		return []*groupLimit{groupLimitAll}, nil
 	}
 
-	limits := []*GroupLimit{}
-	for _, limit := range strings.Split(s, ",") {
-		limit = strings.TrimSpace(limit)
-		if limit == "" {
+	var lims []*groupLimit
+	for _, s0 := range strings.Split(s, ",") {
+		s0 = strings.TrimSpace(s0)
+		if s0 == "" {
 			continue
 		}
-		parts := limitRegex.FindAllStringSubmatch(limit, -1)
+		parts := limitRegex.FindAllStringSubmatch(s0, -1)
 		if len(parts) != 1 || len(parts[0]) != 4 {
-			return nil, fmt.Errorf("invalid group_limit: '%s'", limit)
+			return nil, fmt.Errorf("invalid group_limit: %q", s0)
 		}
-		limit, aggMethodParam, err := ParseLimit(parts[0][1:])
+		var err error
+		var lim groupLimit
+		lim.lim, lim.aggMethod, err = parseLimit(parts[0][1:])
 		if err != nil {
 			return nil, err
 		}
-		aggMethod, ok := ParamToGroupAggMethod[aggMethodParam]
-		if !ok {
-			return nil, fmt.Errorf("unknown group aggregation limit type: '%s'", aggMethodParam)
+		switch lim.aggMethod {
+		case "count", "fraction":
+		default:
+			return nil, fmt.Errorf("unknown group aggregation limit type: %q", lim.aggMethod)
 		}
-		if limit.Bound < 0 || (aggMethod == GroupAggFraction && limit.Bound > 1) {
-			return nil, fmt.Errorf("bad group aggregation bound: %v", limit.Bound)
+		if lim.lim.bound < 0 || (lim.aggMethod == "fraction" && lim.lim.bound > 1) {
+			return nil, fmt.Errorf("bad group aggregation bound: %v", lim.lim.bound)
 		}
-		limits = append(limits, &GroupLimit{
-			Limit:          limit,
-			GroupAggMethod: aggMethod,
-		})
+		lims = append(lims, &lim)
 	}
-	return limits, nil
+	return lims, nil
 }
 
-type Check struct {
-	Metric              string // Graphite metric name
-	From                time.Duration
-	Until               time.Duration
-	IncludeEmptyTargets bool
-	IndividualLimits    []*IndividualLimit
-	GroupLimits         []*GroupLimit
+type check struct {
+	metric              string // Graphite metric name
+	from                time.Duration
+	until               time.Duration
+	includeEmptyTargets bool
+	individualLimits    []*individualLimit
+	groupLimits         []*groupLimit
 }
 
-func getSingleParam(q url.Values, name string) (string, error) {
+func getParam(q url.Values, name string) (string, error) {
 	values, ok := q[name]
 	if !ok {
 		return "", fmt.Errorf("missing parameter: %s", name)
@@ -268,17 +197,17 @@ func getSingleParam(q url.Values, name string) (string, error) {
 	return values[0], nil
 }
 
-func ParseCheckURL(u *url.URL) (*Check, error) {
+func parseCheckURL(u *url.URL) (*check, error) {
 	q := u.Query()
-	metric, err := getSingleParam(q, "metric")
+	metric, err := getParam(q, "metric")
 	if err != nil {
 		return nil, err
 	}
-	from, err := getSingleParam(q, "from")
+	from, err := getParam(q, "from")
 	if err != nil {
 		return nil, err
 	}
-	until, err := getSingleParam(q, "until")
+	until, err := getParam(q, "until")
 	if err != nil {
 		return nil, err
 	}
@@ -290,121 +219,114 @@ func ParseCheckURL(u *url.URL) (*Check, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not parse until: %s", err)
 	}
-	limitString, err := getSingleParam(q, "limit")
+	limitString, err := getParam(q, "limit")
 	if err != nil {
 		return nil, err
 	}
-	individualLimits, err := ParseIndividualLimits(limitString)
+	individualLimits, err := parseIndividualLimits(limitString)
 	if err != nil {
 		return nil, fmt.Errorf("could not parse limit: %s", err)
 	}
-	var groupLimits []*GroupLimit
-	groupLimitParam, ok := q["group_limit"]
-	if ok {
+	var groupLimits []*groupLimit
+	if groupLimitParam, ok := q["group_limit"]; ok {
 		if len(groupLimitParam) > 1 {
 			return nil, fmt.Errorf("parameter group_limit supplied more than once")
 		}
-		groupLimits, err = ParseGroupLimits(groupLimitParam[0])
+		groupLimits, err = parseGroupLimits(groupLimitParam[0])
 		if err != nil {
 			return nil, fmt.Errorf("could not parse group_limit: %s", err)
 		}
 	}
 
-	c := &Check{
-		Metric:              metric,
-		From:                fromDuration,
-		Until:               untilDuration,
-		IncludeEmptyTargets: q.Get("include_empty_targets") == "true",
-		IndividualLimits:    individualLimits,
-		GroupLimits:         groupLimits,
-	}
-	return c, nil
+	return &check{
+		metric:              metric,
+		from:                fromDuration,
+		until:               untilDuration,
+		includeEmptyTargets: q.Get("include_empty_targets") == "true",
+		individualLimits:    individualLimits,
+		groupLimits:         groupLimits,
+	}, nil
 }
 
-// Note it's not documented that url.Values.Encode() emits in key-sorted order (although it does), so this
-// could break in future...
-func (c *Check) String() string {
-	individualLimits := []string{}
-	for _, limit := range c.IndividualLimits {
-		individualLimits = append(individualLimits, limit.String())
+func (c *check) String() string {
+	var individualLimits []string
+	for _, lim := range c.individualLimits {
+		individualLimits = append(individualLimits, lim.String())
 	}
 	sort.Strings(individualLimits)
-	groupLimits := []string{}
-	for _, limit := range c.GroupLimits {
-		groupLimits = append(groupLimits, limit.String())
+	var groupLimits []string
+	for _, lim := range c.groupLimits {
+		groupLimits = append(groupLimits, lim.String())
 	}
 	sort.Strings(groupLimits)
 	v := url.Values{
-		"metric":      {c.Metric},
-		"from":        {c.From.String()},
-		"until":       {c.Until.String()},
+		"metric":      {c.metric},
+		"from":        {c.from.String()},
+		"until":       {c.until.String()},
 		"limit":       {strings.Join(individualLimits, ",")},
 		"group_limit": {strings.Join(groupLimits, ",")},
 	}
 	return v.Encode()
 }
 
-func (c *Check) MakeGraphiteURL() string {
+func (s *shadow) checkDataURL(c *check) string {
 	values := url.Values{
-		"target": {c.Metric},
+		"target": {c.metric},
 		"format": {"json"},
-		"from":   {fmt.Sprintf("-%ds", int(c.From.Seconds()))},
-		"until":  {fmt.Sprintf("-%ds", int(c.Until.Seconds()))},
+		"from":   {fmt.Sprintf("-%ds", int(c.from.Seconds()))},
+		"until":  {fmt.Sprintf("-%ds", int(c.until.Seconds()))},
 	}
-	return GraphiteURL("render?" + values.Encode())
+	return s.graphiteURL + "/render?" + values.Encode()
 }
 
-// TODO: The user could configure the Render chart URL in the toml (adjust time range, size, etc.)
-func (c *Check) MakeGraphiteRenderURL() string {
+func (s *shadow) checkRenderURL(c *check) string {
 	minutes := 30
-	title := fmt.Sprintf("Last %d minutes of data for %s", minutes, c.Metric)
+	title := fmt.Sprintf("Last %d minutes of data for %s", minutes, c.metric)
 	values := url.Values{
-		"target": {c.Metric},
+		"target": {c.metric},
 		"from":   {fmt.Sprintf("-%dmins", minutes)},
 		"width":  {"800"},
 		"height": {"600"},
 		"yMin":   {"0"},
 		"title":  {title},
 	}
-	return GraphiteURL("render?" + values.Encode())
+	return s.graphiteURL + "/render?" + values.Encode()
 }
 
 // TODO: retries
-func (c *Check) DoCheck(w http.ResponseWriter) {
-	s := &Status{}
-	defer func() {
-		s.WriteHTTPResponse(w)
-	}()
-	resp, err := client.Get(c.MakeGraphiteURL())
+func (s *shadow) doCheck(w http.ResponseWriter, c *check) {
+	var st status
+	defer st.write(w)
+
+	resp, err := s.client.Get(s.checkDataURL(c))
 	if err != nil {
-		s.Code = http.StatusBadGateway
-		s.Message = "Error contacting the Graphite server: " + err.Error()
+		st.code = http.StatusBadGateway
+		st.message = "Error contacting the Graphite server: " + err.Error()
 		return
 	}
 	defer resp.Body.Close()
-	s.Code = resp.StatusCode
+	st.code = resp.StatusCode
 	if getContentType(resp.Header) != "application/json" {
-		s.Message = "Non-JSON response from Graphite (exception?)"
+		st.message = "Non-JSON response from Graphite (exception?)"
 		if body, err := ioutil.ReadAll(resp.Body); err == nil {
-			s.Message += "\n\n" + string(body)
+			st.message += "\n\n" + string(body)
 		}
 		return
 	}
-	decoder := json.NewDecoder(resp.Body)
-	var result []*GraphiteResult
-	if err := decoder.Decode(&result); err != nil {
-		s.Code = http.StatusBadGateway
-		s.Message = "Could not read JSON response from Graphite: " + err.Error()
+	var result []*graphiteResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		st.code = http.StatusBadGateway
+		st.message = "Could not read JSON response from Graphite: " + err.Error()
 		return
 	}
-	ok, reason := CompareGraphiteResultWithCheck(result, c)
+	ok, reason := s.compareResult(result, c)
 	if ok {
-		s.Code = http.StatusOK
-		s.Message = ""
+		st.code = 200
+		st.message = ""
 		return
 	}
-	s.Code = http.StatusInternalServerError
-	s.Message = reason
+	st.code = http.StatusInternalServerError
+	st.message = reason
 }
 
 func getContentType(header http.Header) string {
@@ -419,154 +341,147 @@ func getContentType(header http.Header) string {
 	return mt
 }
 
-func HandleGraphiteChecks(w http.ResponseWriter, r *http.Request) {
-	check, err := ParseCheckURL(r.URL)
+func (s *shadow) handleGraphiteCheck(w http.ResponseWriter, r *http.Request) {
+	c, err := parseCheckURL(r.URL)
 	if err != nil {
 		http.Error(w, "Invalid check: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	check.DoCheck(w)
+	s.doCheck(w, c)
 }
 
-type GraphitePoint struct {
-	Null  bool
-	Value float64
+type graphitePoint struct {
+	null  bool
+	value float64
 }
 
-func (p *GraphitePoint) UnmarshalJSON(b []byte) error {
-	// Easy (hacky) way to get at the numbers -- I don't actually care about the timestamp, so it's fine for it
-	// to be a float64 (I'm just going to throw it away).
+func (p *graphitePoint) UnmarshalJSON(b []byte) error {
+	// Easy, hacky way to get at the numbers: we don't care about the
+	// timestamp, so it's fine for it to be a float64.
 	var values [2]*float64
 	if err := json.Unmarshal(b, &values); err != nil {
 		return err
 	}
 	if values[0] == nil {
-		p.Null = true
-		p.Value = 0
+		p.null = true
+		p.value = 0
 		return nil
 	}
-	p.Null = false
-	p.Value = *values[0]
+	p.null = false
+	p.value = *values[0]
 	return nil
 }
 
-type GraphiteResult struct {
+type graphiteResult struct {
 	Target     string
-	Datapoints []*GraphitePoint
+	Datapoints []*graphitePoint
 }
 
-type CheckResult struct {
-	OK     bool
-	Ignore bool
-	Reason string
+type checkResult struct {
+	ok     bool
+	ignore bool
+	reason string
 }
 
-func CompareGraphiteResultWithCheck(result []*GraphiteResult, c *Check) (ok bool, reason string) {
+func (s *shadow) compareResult(result []*graphiteResult, c *check) (ok bool, reason string) {
 	if len(result) == 0 {
-		return false, "No datapoints returned from Graphite."
+		return false, "No datapoints returned from Graphite"
 	}
-	if len(c.GroupLimits) > 0 {
-		checkResults := make([]CheckResult, 0, len(result))
+	if len(c.groupLimits) > 0 {
+		checkResults := make([]checkResult, 0, len(result))
 		for _, r := range result {
-			checkResult := r.compareWithCheck(c)
-			if checkResult.Ignore {
+			checkResult := r.compare(c)
+			if checkResult.ignore {
 				continue
 			}
 			checkResults = append(checkResults, checkResult)
 		}
-		return checkGroupResults(checkResults, c)
+		return s.compareGroupResults(checkResults, c)
 	}
 	if len(result) > 1 {
 		return false, "group_limit not given, yet Graphite returned multiple datapoints"
 	}
-	checkResult := result[0].compareWithCheck(c)
-	reason = checkResult.Reason
-	if !checkResult.OK {
-		reason += "\nChart2: " + c.MakeGraphiteRenderURL()
+	checkResult := result[0].compare(c)
+	reason = checkResult.reason
+	if !checkResult.ok {
+		reason += "\nChart2: " + s.checkRenderURL(c)
 	}
-	return checkResult.OK, reason
+	return checkResult.ok, reason
 }
 
-func checkGroupResults(results []CheckResult, c *Check) (ok bool, reason string) {
+func (s *shadow) compareGroupResults(results []checkResult, c *check) (ok bool, reason string) {
 	if len(results) == 0 {
 		return false, "no data to check"
 	}
-	var goodCount float64
+	var numGood float64
 	for _, r := range results {
-		if r.OK {
-			goodCount += 1
+		if r.ok {
+			numGood++
 		}
 	}
-	goodFrac := goodCount / float64(len(results))
-	for _, limit := range c.GroupLimits {
-		var ok bool
-		switch limit.GroupAggMethod {
-		case GroupAggCount:
-			ok = limit.Within(goodCount)
-		case GroupAggFraction:
-			ok = limit.Within(goodFrac)
-		}
-		if !ok {
-			buf := &bytes.Buffer{}
-			fmt.Fprintf(buf, "group_limit %s check failed (%v/%v good datapoints)\n", limit, goodCount,
-				len(results))
-			fmt.Fprintf(buf, "Failed datapoints:\n")
-			for _, r := range results {
-				if !r.OK {
-					fmt.Fprintf(buf, "%s\n", r.Reason)
-				}
+	goodFrac := numGood / float64(len(results))
+	for _, lim := range c.groupLimits {
+		switch lim.aggMethod {
+		case "count":
+			if lim.lim.within(numGood) {
+				continue
 			}
-			fmt.Fprintf(buf, "Chart: %s", c.MakeGraphiteRenderURL())
-			return false, buf.String()
+		case "fraction":
+			if lim.lim.within(goodFrac) {
+				continue
+			}
 		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "group_limit %s check failed (%v/%v good datapoints)\n", lim, numGood, len(results))
+		fmt.Fprintf(&b, "Failed datapoints:\n")
+		for _, r := range results {
+			if !r.ok {
+				fmt.Fprintln(&b, r.reason)
+			}
+		}
+		fmt.Fprintf(&b, "Chart: %s", s.checkRenderURL(c))
+		return false, b.String()
 	}
 	return true, ""
 }
 
-func (r *GraphiteResult) compareWithCheck(c *Check) CheckResult {
-	for _, limit := range c.IndividualLimits {
-		nonNullValues := make([]float64, 0, len(r.Datapoints))
+func (r *graphiteResult) compare(c *check) checkResult {
+	for _, lim := range c.individualLimits {
+		var numNonNull int
+		var agg float64
 		for _, p := range r.Datapoints {
-			if !p.Null {
-				nonNullValues = append(nonNullValues, p.Value)
+			if p.null {
+				continue
+			}
+			numNonNull++
+			switch lim.aggMethod {
+			case "avg", "sum":
+				agg += p.value
+			case "max":
+				if numNonNull == 1 || p.value > agg {
+					agg = p.value
+				}
+			case "min":
+				if numNonNull == 1 || p.value < agg {
+					agg = p.value
+				}
 			}
 		}
-		if len(nonNullValues) == 0 {
-			return CheckResult{false, !c.IncludeEmptyTargets, fmt.Sprintf("%s: no datapoints", r.Target)}
-		}
-		agg := computeAggregate(nonNullValues, limit.AggMethod)
-		if !limit.Within(agg) {
-			return CheckResult{false, false,
-				fmt.Sprintf("%s: limit violated: %s (%s=%.4f)", r.Target, limit, limit.AggMethod, agg)}
-		}
-	}
-	return CheckResult{true, false, ""}
-}
-
-func computeAggregate(points []float64, method AggMethod) float64 {
-	var result float64
-	switch method {
-	case AggAvg, AggSum:
-		for _, p := range points {
-			result += p
-		}
-		if method == AggAvg {
-			result /= float64(len(points))
-		}
-	case AggMax:
-		result = points[0]
-		for _, p := range points[1:] {
-			if p > result {
-				result = p
+		if numNonNull == 0 {
+			return checkResult{
+				ignore: !c.includeEmptyTargets,
+				reason: fmt.Sprintf("%s: no datapoints", r.Target),
 			}
 		}
-	case AggMin:
-		result = points[0]
-		for _, p := range points[1:] {
-			if p < result {
-				result = p
+		if lim.aggMethod == "avg" {
+			agg /= float64(numNonNull)
+		}
+		if !lim.lim.within(agg) {
+			return checkResult{
+				reason: fmt.Sprintf("%s: limit violated: %s (%s=%.4f)",
+					r.Target, lim, lim.aggMethod, agg),
 			}
 		}
 	}
-	return result
+	return checkResult{ok: true}
 }
