@@ -48,10 +48,7 @@ parseGroupLimit = (raw) ->
   return null unless raw
   if raw in ["all", "any"]
     return raw
-  throw "Bad group limit (only one comparison allowed): #{raw}" if raw.match(/,/)
-  [name, comp, value] = parseComparison(raw)
-  throw "Bad comparison for group limit: #{name}" unless name in ["count", "fraction"]
-  [name, comp, value]
+  throw "Bad group limit: #{raw}"
 
 parseDuration = (raw) ->
   throw "Bad duration: #{raw}" unless raw.match(/^(\d+[dhms])+$/)
@@ -148,17 +145,9 @@ populateLimits = (limits) ->
 
 populateGroupLimits = (groupLimit) ->
   $group = $("#group-limits .limit")
-  unless groupLimit
-    $group.find("select.limit-name").val("none")
-    return
-  if groupLimit in ["any", "all"]
-    $group.find("select.limit-name").val(groupLimit)
-    flash($group.find("select"))
-    return
-  $group.find("select.limit-name").val(groupLimit[0])
-  $group.find("select.comparison").val(groupLimit[1])
-  $group.find("input.value-box").val(groupLimit[2])
-  flash($group.find("select, input"))
+  groupLimit = "none" unless groupLimit
+  $group.find("select.limit-name").val(groupLimit)
+  flash($group.find("select"))
 
 flash = ($e) ->
   $e.addClass("flash")
@@ -173,16 +162,6 @@ addLimit = ->
 removeLimit = (e) ->
   $(e.target).parent().remove()
   writeUrlFromFields()
-
-setGroupLimitFieldVisibility = ->
-  $groupLimit = $("#group-limits .limit")
-  name = $groupLimit.find("select.limit-name").val()
-  if name in ["none", "any", "all"]
-    $groupLimit.find("select.comparison").hide()
-    $groupLimit.find("input.value-box").hide()
-  else
-    $groupLimit.find("select.comparison").show()
-    $groupLimit.find("input.value-box").show()
 
 writeUrlFromFields = ->
   metric = encodeURIComponent(dedentMetric($("#metric-box").val()))
@@ -200,14 +179,7 @@ writeUrlFromFields = ->
   $groupLimit = $("#group-limits .limit")
   groupLimitType = $groupLimit.find("select.limit-name").val()
   if groupLimitType != "none"
-    if groupLimitType in ["all", "any"]
-      query += "&group_limit=#{groupLimitType}"
-    else
-      name = $groupLimit.find("select.limit-name").val()
-      comp = $groupLimit.find("select.comparison").val()
-      val = $groupLimit.find("input.value-box").val()
-      limit = encodeURIComponent(name+comp+val)
-      query += "&group_limit=#{limit}"
+    query += "&group_limit=#{groupLimitType}"
   if $("#include-empty-targets-checkbox").is(":checked")
     query += "&include_empty_targets=true"
   $url = $("#url-box")
@@ -251,12 +223,10 @@ window.resizeQueryResult = ->
   $("#query-result").height(Math.max(100, scrollHeight))
 
 $ ->
-  setGroupLimitFieldVisibility()
   $("#url-box").on "input", populateFieldsFromUrl
   $("#breakdown").on "input", "textarea,input", writeUrlFromFields
   $("#breakdown").on "change", "select", writeUrlFromFields
   $("#breakdown").on "click", "label", writeUrlFromFields
   $("#add-limit").on "click", addLimit
   $("#limits").on "click", ".remove-limit", removeLimit
-  $("#group-limits select.limit-name").on "change", setGroupLimitFieldVisibility
   $("#query").on "click", doQuery

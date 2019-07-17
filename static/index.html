@@ -61,19 +61,9 @@
             <div class="limit">
               <select class="limit-name">
                 <option value="none">none</option>
-                <option value="count">count</option>
-                <option value="fraction">fraction</option>
                 <option value="any">any</option>
                 <option value="all">all</option>
               </select>
-              <select class="comparison">
-                <option value="<">&lt;</option>
-                <option value="<=">&leq;</option>
-                <option value="=">=</option>
-                <option value=">=">&geq;</option>
-                <option value=">">&gt;</option>
-              </select>
-              <input class="value-box" type="text" placeholder="1234">
             </div>
           </div>
 
@@ -108,11 +98,10 @@
             </li>
             <li>
               Group limits must be given when the target metric returns multiple keys.
-              A group limit defines the limits on the number/fraction of successful targets needed for a
-              successful check. For example, if the group limit is <code>count &gt; 5</code>,
-              then more than 5 of the resulting target must satisfy all limits over the given time range in
-              order for the overall check to pass. Two aliases, <code>any</code> and <code>all</code>, an be
-              used for convenience.
+              A group limit defines the limits on the number of successful targets needed for a
+              successful check. If the group limit is <code>all</code>, all targets need to be within the
+              limits for the check to pass. If the group limit is <code>any</code>, at least one target needs
+              to be within the limits.
             </li>
             <li>
               The "include empty targets" setting controls whether Shadow considers targets that come back

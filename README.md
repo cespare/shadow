@@ -32,12 +32,9 @@ query-string parameters.
   an aggregator term. The possible comparators are `<`, `<=`, `=`, `>=`, and
   `>`. The possible aggregator terms are `avg`, `min`, `max`, and `sum`.
   Example: `limit=min>500,avg>1000,avg<2000`.
-* `group_limit`: This is like `limit`, except the possible aggregators are
-  `count` and `fraction`. `group_limit` must be given when the target metric
-  returns multiple values. This defines the limits on the number/fraction of
-  successful targets needed for a successful check. Example:
-  `group_limit=count>5`. There are two aliases, `any` and `all`, which can be
-  used instead (e.g., `group_limit=all`).
+* `group_limit`: This may be set to "all" or "any", to indicate how many
+  different targets need to be within limit bounds for the check as a whole to
+  pass.
 * `include_empty_targets`: This parameter controls whether Shadow considers
   targets that come back without any non-null datapoints.
 
@@ -75,11 +72,6 @@ You're using [gost](https://github.com/cespare/gost) and you want to alert when
 one of your servers is overloaded:
 
     /check?metric=backend-*.gost.os_stats.load_avg_15.gauge&range=1m&limit=max<0.7&group_limit=all
-
-You have a massive HDFS cluster and you want to know when more than 10% of the
-machines are running low on disk space:
-
-    /check?metric=hdfs-*.gost.os_stats.disk_usage.root_volume.gauge&range=5m&limit=max<0.9&group_limit=fraction>0.9
 
 ## Advantages over Umpire
 

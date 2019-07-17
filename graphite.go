@@ -121,69 +121,13 @@ func parseIndividualLimits(s string) ([]*individualLimit, error) {
 	return lims, nil
 }
 
-type groupLimit struct {
-	lim       limit
-	aggMethod string // count or fraction
-}
-
-var groupLimitAny = &groupLimit{
-	lim:       limit{">", 0},
-	aggMethod: "count",
-}
-
-var groupLimitAll = &groupLimit{
-	lim:       limit{"=", 1},
-	aggMethod: "fraction",
-}
-
-func (l *groupLimit) String() string {
-	return fmt.Sprintf("%s%s", l.aggMethod, l.lim)
-}
-
-func parseGroupLimits(s string) ([]*groupLimit, error) {
-	switch s {
-	case "any":
-		return []*groupLimit{groupLimitAny}, nil
-	case "all":
-		return []*groupLimit{groupLimitAll}, nil
-	}
-
-	var lims []*groupLimit
-	for _, s0 := range strings.Split(s, ",") {
-		s0 = strings.TrimSpace(s0)
-		if s0 == "" {
-			continue
-		}
-		parts := limitRegex.FindAllStringSubmatch(s0, -1)
-		if len(parts) != 1 || len(parts[0]) != 4 {
-			return nil, fmt.Errorf("invalid group_limit: %q", s0)
-		}
-		var err error
-		var lim groupLimit
-		lim.lim, lim.aggMethod, err = parseLimit(parts[0][1:])
-		if err != nil {
-			return nil, err
-		}
-		switch lim.aggMethod {
-		case "count", "fraction":
-		default:
-			return nil, fmt.Errorf("unknown group aggregation limit type: %q", lim.aggMethod)
-		}
-		if lim.lim.bound < 0 || (lim.aggMethod == "fraction" && lim.lim.bound > 1) {
-			return nil, fmt.Errorf("bad group aggregation bound: %v", lim.lim.bound)
-		}
-		lims = append(lims, &lim)
-	}
-	return lims, nil
-}
-
 type check struct {
 	metric              string // Graphite metric name
 	from                time.Duration
 	until               time.Duration
 	includeEmptyTargets bool
 	individualLimits    []*individualLimit
-	groupLimits         []*groupLimit
+	groupLimit          string // "", "all", or "any"
 }
 
 func getParam(q url.Values, name string) (string, error) {
@@ -227,14 +171,16 @@ func parseCheckURL(u *url.URL) (*check, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not parse limit: %s", err)
 	}
-	var groupLimits []*groupLimit
+	var groupLimit string
 	if groupLimitParam, ok := q["group_limit"]; ok {
 		if len(groupLimitParam) > 1 {
 			return nil, fmt.Errorf("parameter group_limit supplied more than once")
 		}
-		groupLimits, err = parseGroupLimits(groupLimitParam[0])
-		if err != nil {
-			return nil, fmt.Errorf("could not parse group_limit: %s", err)
+		groupLimit = groupLimitParam[0]
+		switch groupLimit {
+		case "any", "all":
+		default:
+			return nil, fmt.Errorf("unknown group_limit value %q", groupLimit)
 		}
 	}
 
@@ -244,7 +190,7 @@ func parseCheckURL(u *url.URL) (*check, error) {
 		until:               untilDuration,
 		includeEmptyTargets: q.Get("include_empty_targets") == "true",
 		individualLimits:    individualLimits,
-		groupLimits:         groupLimits,
+		groupLimit:          groupLimit,
 	}, nil
 }
 
@@ -254,17 +200,14 @@ func (c *check) String() string {
 		individualLimits = append(individualLimits, lim.String())
 	}
 	sort.Strings(individualLimits)
-	var groupLimits []string
-	for _, lim := range c.groupLimits {
-		groupLimits = append(groupLimits, lim.String())
-	}
-	sort.Strings(groupLimits)
 	v := url.Values{
-		"metric":      {c.metric},
-		"from":        {c.from.String()},
-		"until":       {c.until.String()},
-		"limit":       {strings.Join(individualLimits, ",")},
-		"group_limit": {strings.Join(groupLimits, ",")},
+		"metric": {c.metric},
+		"from":   {c.from.String()},
+		"until":  {c.until.String()},
+		"limit":  {strings.Join(individualLimits, ",")},
+	}
+	if c.groupLimit != "" {
+		v["group_limit"] = []string{c.groupLimit}
 	}
 	return v.Encode()
 }
@@ -387,7 +330,7 @@ func (s *shadow) compareResult(result []*graphiteResult, c *check) (ok bool, rea
 	if len(result) == 0 {
 		return false, "No datapoints returned from Graphite"
 	}
-	if len(c.groupLimits) > 0 {
+	if c.groupLimit != "" {
 		checkResults := make([]checkResult, 0, len(result))
 		for _, r := range result {
 			checkResult := r.compare(c)
@@ -404,7 +347,7 @@ func (s *shadow) compareResult(result []*graphiteResult, c *check) (ok bool, rea
 	checkResult := result[0].compare(c)
 	reason = checkResult.reason
 	if !checkResult.ok {
-		reason += "\nChart2: " + s.checkRenderURL(c)
+		reason += "\nChart: " + s.checkRenderURL(c)
 	}
 	return checkResult.ok, reason
 }
@@ -413,36 +356,33 @@ func (s *shadow) compareGroupResults(results []checkResult, c *check) (ok bool, 
 	if len(results) == 0 {
 		return false, "no data to check"
 	}
-	var numGood float64
+	var numFailed int
 	for _, r := range results {
-		if r.ok {
-			numGood++
+		if !r.ok {
+			numFailed++
 		}
 	}
-	goodFrac := numGood / float64(len(results))
-	for _, lim := range c.groupLimits {
-		switch lim.aggMethod {
-		case "count":
-			if lim.lim.within(numGood) {
-				continue
-			}
-		case "fraction":
-			if lim.lim.within(goodFrac) {
-				continue
-			}
+
+	var b strings.Builder
+	switch c.groupLimit {
+	case "any":
+		if numFailed < len(results) {
+			return true, ""
 		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "group_limit %s check failed (%v/%v good datapoints)\n", lim, numGood, len(results))
-		fmt.Fprintf(&b, "Failed datapoints:\n")
-		for _, r := range results {
-			if !r.ok {
-				fmt.Fprintln(&b, r.reason)
-			}
+		fmt.Fprintf(&b, "group_limit=any check failed for all %d datapoints:\n", len(results))
+	case "all":
+		if numFailed == 0 {
+			return true, ""
 		}
-		fmt.Fprintf(&b, "Chart: %s", s.checkRenderURL(c))
-		return false, b.String()
+		fmt.Fprintf(&b, "group_limit=all check failed for %d/%d datapoints:\n", numFailed, len(results))
 	}
-	return true, ""
+	for _, r := range results {
+		if !r.ok {
+			fmt.Fprintln(&b, r.reason)
+		}
+	}
+	fmt.Fprintf(&b, "Chart: %s", s.checkRenderURL(c))
+	return false, b.String()
 }
 
 func (r *graphiteResult) compare(c *check) checkResult {
@@ -478,7 +418,7 @@ func (r *graphiteResult) compare(c *check) checkResult {
 		}
 		if !lim.lim.within(agg) {
 			return checkResult{
-				reason: fmt.Sprintf("%s: limit violated: %s (%s=%.4f)",
+				reason: fmt.Sprintf("%s: limit is %s; got %s=%g",
 					r.Target, lim, lim.aggMethod, agg),
 			}
 		}
